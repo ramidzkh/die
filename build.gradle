@@ -1,0 +1,86 @@
+plugins {
+    id("java-library")
+    id("maven-publish")
+    id("signing")
+    id("com.diffplug.spotless") version "6.10.0"
+}
+
+group "me.ramidzkh"
+version "1.0.0-SNAPSHOT"
+
+sourceSets {
+    network {
+        java {
+            compileClasspath += main.output + main.compileClasspath
+            runtimeClasspath += main.output + main.runtimeClasspath
+        }
+    }
+
+    test {
+        java {
+            compileClasspath += network.output + network.compileClasspath
+            runtimeClasspath += network.output + network.runtimeClasspath
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+
+    flatDir {
+        dirs("lib")
+    }
+}
+
+dependencies {
+    compileOnly("org.jetbrains:annotations:23.0.0")
+    runtimeOnly("me.ramidzkh:diff:1.0.0")
+
+    networkImplementation("io.javalin:javalin:4.6.4")
+    networkImplementation("com.google.guava:guava:31.1-jre")
+    networkRuntimeOnly("org.slf4j:slf4j-simple:1.7.31")
+    networkRuntimeOnly("org.slf4j:slf4j-api:1.6.1")
+    networkRuntimeOnly("org.slf4j:slf4j-simple:1.6.1")
+
+    testImplementation("org.junit.jupiter:junit-jupiter-api:5.9.0")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.9.0")
+
+    testImplementation("com.github.javaparser:javaparser-core:3.24.4")
+}
+
+test {
+    useJUnitPlatform()
+}
+
+spotless {
+    java {
+        target("src/*/java/**/*.java")
+
+        endWithNewline()
+        indentWithSpaces()
+        removeUnusedImports()
+        toggleOffOn()
+        eclipse().configFile("codeformat/codeformat.xml")
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from(components.java)
+
+            if (signing.signatory != null) {
+                signing.sign(this)
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            def releasesRepoUrl = uri("${buildDir}/repos/releases")
+            def snapshotsRepoUrl = uri("${buildDir}/repos/snapshots")
+            name = "Project"
+            url = version.toString().endsWith("SNAPSHOT") ? snapshotsRepoUrl : releasesRepoUrl
+        }
+    }
+}
