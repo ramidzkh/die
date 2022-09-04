@@ -18,6 +18,8 @@ package me.ramidzkh.die;
 
 import org.jetbrains.annotations.Nullable;
 
+import java.util.concurrent.CompletableFuture;
+
 /**
  * Tree diffing algorithm
  */
@@ -31,8 +33,10 @@ public interface Differ {
      * @param modified The modified node
      * @param provider The provider of a visitor which accepts the changes
      * @param <N>      Node, such as origin tree node
+     * @return A future to indicate when the diff has been completed
      */
-    <N> void diff(NodeMetadataProvider<N> metadata, N original, N modified, DiffVisitorProvider<N> provider);
+    <N> CompletableFuture<?> diff(NodeMetadataProvider<N> metadata, N original, N modified,
+            DiffVisitorProvider<N> provider);
 
     /**
      * The provider of a visitor which accepts the changes, given context about matching nodes
@@ -116,10 +120,5 @@ public interface Differ {
          * @param x    The replacement node
          */
         void replace(N node, N x);
-
-        /**
-         * Indicates that all actions have been visited
-         */
-        void finish();
     }
 }

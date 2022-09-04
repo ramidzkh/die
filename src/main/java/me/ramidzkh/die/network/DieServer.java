@@ -4,152 +4,150 @@ import com.google.common.collect.ArrayListMultimap;
 import io.javalin.Javalin;
 import me.ramidzkh.die.Differ;
 import me.ramidzkh.die.NodeMetadataProvider;
+import org.eclipse.jetty.server.AbstractConnector;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 public class DieServer {
 
-    private record TL(String type, String label) {
+    private record TL(int type, int label) {
 
     }
 
     private record Data(Set<Integer> world, ArrayListMultimap<Integer, Integer> children,
-            Map<Integer, TL> typesAndLabels) {
+            Map<Integer, TL> typesAndLabels, IndexMap<String> stringPool) implements NodeMetadataProvider<Integer> {
 
+        @Override
+        public List<Integer> getChildren(Integer node) {
+            return children.get(node);
+        }
+
+        @Override
+        public String getType(Integer node) {
+            return stringPool.get(typesAndLabels.get(node).type());
+        }
+
+        @Override
+        public String getLabel(Integer node) {
+            return stringPool.get(typesAndLabels.get(node).label());
+        }
     }
 
-    public static void start(Differ differ, Javalin app) {
-        app.post("/", ctx -> {
-            var input = new DataInputStream(ctx.bodyAsInputStream());
-            var data = new Data(new HashSet<>(), ArrayListMultimap.create(), new HashMap<>());
+    private static CompletableFuture<byte[]> process(Differ differ, InputStream stream)
+            throws IOException {
+        var input = new DataInputStream(stream);
+        var data = new Data(new HashSet<>(), ArrayListMultimap.create(), new HashMap<>(), new IndexMap<>());
 
-            var original = input.readInt();
-            var modified = input.readInt();
+        var original = input.readInt();
+        var modified = input.readInt();
 
-            readTree(input, original, data);
-            readTree(input, modified, data);
+        readTree(input, original, data);
+        readTree(input, modified, data);
 
-            differ.diff(new NodeMetadataProvider<>() {
+        var stringPoolSize = input.readInt();
+
+        for (var i = 0; i < stringPoolSize; i++) {
+            data.stringPool().insert(input.readUTF());
+        }
+
+        var response = new ByteArrayOutputStream();
+        var output = new DataOutputStream(response);
+        var replacements = new int[2];
+
+        return differ.diff(data, original, modified, matches -> {
+            try {
+                output.writeInt(0);
+                output.writeInt(0);
+
+                for (var node : data.world()) {
+                    var to = matches.getMatchedNode(node);
+
+                    if (to != null) {
+                        output.writeInt(node);
+                        output.writeInt(to);
+                        replacements[0]++;
+                    }
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+
+            class Visitor implements Differ.Visitor<Integer> {
+
                 @Override
-                public List<Integer> getChildren(Integer node) {
-                    return data.children().get(node);
+                public void delete(Integer node) {
+                    try {
+                        output.writeByte(0);
+                        output.writeInt(node);
+                        replacements[1]++;
+                    } catch (IOException exception) {
+                        throw new RuntimeException(exception);
+                    }
                 }
 
                 @Override
-                public String getType(Integer node) {
-                    return data.typesAndLabels().get(node).type();
+                public void insert(Integer node, Integer parent, int pos) {
+                    try {
+                        output.writeByte(1);
+                        output.writeInt(node);
+                        output.writeInt(parent);
+                        output.writeInt(pos);
+                        replacements[1]++;
+                    } catch (IOException exception) {
+                        throw new RuntimeException(exception);
+                    }
                 }
 
                 @Override
-                public String getLabel(Integer node) {
-                    return data.typesAndLabels().get(node).label();
-                }
-            }, original, modified, matches -> {
-                var response = new ByteArrayOutputStream();
-                var output = new DataOutputStream(response);
-                int toReplace1, toReplace2;
-                var replacement1 = 0;
-
-                try {
-                    toReplace1 = response.size();
-                    output.writeInt(0);
-
-                    for (var node : data.world()) {
-                        var to = matches.getMatchedNode(node);
-
-                        if (to != null) {
-                            output.writeInt(node);
-                            output.writeInt(to);
-                            replacement1++;
-                        }
-                    }
-
-                    toReplace2 = response.size();
-                    output.writeInt(0);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-
-                var finalReplacement = replacement1;
-
-                class Visitor implements Differ.Visitor<Integer> {
-
-                    int count;
-
-                    @Override
-                    public void delete(Integer node) {
-                        try {
-                            output.writeByte(0);
-                            output.writeInt(node);
-                            count++;
-                        } catch (IOException exception) {
-                            throw new RuntimeException(exception);
-                        }
-                    }
-
-                    @Override
-                    public void insert(Integer node, Integer parent, int pos) {
-                        try {
-                            output.writeByte(1);
-                            output.writeInt(node);
-                            output.writeInt(parent);
-                            output.writeInt(pos);
-                            count++;
-                        } catch (IOException exception) {
-                            throw new RuntimeException(exception);
-                        }
-                    }
-
-                    @Override
-                    public void move(Integer node, Integer parent, int pos) {
-                        try {
-                            output.writeByte(2);
-                            output.writeInt(node);
-                            output.writeInt(parent);
-                            output.writeInt(pos);
-                            count++;
-                        } catch (IOException exception) {
-                            throw new RuntimeException(exception);
-                        }
-                    }
-
-                    @Override
-                    public void replace(Integer node, Integer x) {
-                        try {
-                            output.writeByte(3);
-                            output.writeInt(node);
-                            output.writeInt(x);
-                            count++;
-                        } catch (IOException exception) {
-                            throw new RuntimeException(exception);
-                        }
-                    }
-
-                    @Override
-                    public void finish() {
-                        var bytes = response.toByteArray();
-                        bytes[toReplace1] = (byte) (finalReplacement >>> 24);
-                        bytes[toReplace1 + 1] = (byte) (finalReplacement >>> 16);
-                        bytes[toReplace1 + 2] = (byte) (finalReplacement >>> 8);
-                        bytes[toReplace1 + 3] = (byte) (finalReplacement);
-                        bytes[toReplace2] = (byte) (count >>> 24);
-                        bytes[toReplace2 + 1] = (byte) (count >>> 16);
-                        bytes[toReplace2 + 2] = (byte) (count >>> 8);
-                        bytes[toReplace2 + 3] = (byte) (count);
-
-                        ctx.result(bytes);
+                public void move(Integer node, Integer parent, int pos) {
+                    try {
+                        output.writeByte(2);
+                        output.writeInt(node);
+                        output.writeInt(parent);
+                        output.writeInt(pos);
+                        replacements[1]++;
+                    } catch (IOException exception) {
+                        throw new RuntimeException(exception);
                     }
                 }
 
-                return new Visitor();
-            });
+                @Override
+                public void replace(Integer node, Integer x) {
+                    try {
+                        output.writeByte(3);
+                        output.writeInt(node);
+                        output.writeInt(x);
+                        replacements[1]++;
+                    } catch (IOException exception) {
+                        throw new RuntimeException(exception);
+                    }
+                }
+            }
+
+            return new Visitor();
+        }).thenApply(it -> {
+            var bytes = response.toByteArray();
+            var matchCount = replacements[0];
+            var actionCount = replacements[1];
+
+            bytes[0] = (byte) (matchCount >>> 24);
+            bytes[1] = (byte) (matchCount >>> 16);
+            bytes[2] = (byte) (matchCount >>> 8);
+            bytes[3] = (byte) matchCount;
+            bytes[4] = (byte) (actionCount >>> 24);
+            bytes[5] = (byte) (actionCount >>> 16);
+            bytes[6] = (byte) (actionCount >>> 8);
+            bytes[7] = (byte) actionCount;
+
+            return bytes;
         });
     }
 
     private static void readTree(DataInput input, int into, Data data) throws IOException {
         data.world().add(into);
-        data.typesAndLabels().put(into, new TL(input.readUTF(), input.readUTF()));
+        data.typesAndLabels().put(into, new TL(input.readInt(), input.readInt()));
 
         var children = input.readInt();
 
@@ -158,6 +156,16 @@ public class DieServer {
             data.children().put(into, child);
             readTree(input, child, data);
         }
+    }
+
+    public static void start(Differ differ, Javalin app) {
+        for (var connector : app.jettyServer().server().getConnectors()) {
+            if (connector instanceof AbstractConnector abstractConnector) {
+                abstractConnector.setIdleTimeout(10000000000000L);
+            }
+        }
+
+        app.post("/", ctx -> ctx.future(process(differ, ctx.bodyAsInputStream()).thenApply(ByteArrayInputStream::new)));
     }
 
     public static void main(String[] args) {

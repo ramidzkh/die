@@ -23,9 +23,4 @@ public class SoutVisitor<T> implements Differ.Visitor<T> {
     public void replace(T node, T x) {
         System.out.println("replace " + node + " with " + x);
     }
-
-    @Override
-    public void finish() {
-        System.out.println("done");
-    }
 }

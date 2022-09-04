@@ -24,4 +24,8 @@ class IndexMap<N> {
     public N get(int index) {
         return nodeToIndex.inverse().get(index);
     }
+
+    public int size() {
+        return nodeToIndex.size();
+    }
 }

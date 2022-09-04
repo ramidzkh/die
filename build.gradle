@@ -3,6 +3,9 @@ plugins {
     id("maven-publish")
     id("signing")
     id("com.diffplug.spotless") version "6.10.0"
+
+    id("application")
+    id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
 group "me.ramidzkh"
@@ -30,6 +33,10 @@ dependencies {
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.9.0")
 
     testImplementation("com.github.javaparser:javaparser-core:3.24.4")
+}
+
+application {
+    mainClass.set("me.ramidzkh.die.network.DieServer")
 }
 
 test {

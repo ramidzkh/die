@@ -28,6 +28,6 @@ public class JavaParserTest {
                     }
                 }""");
 
-        differ.diff(new JavaParserNodeMetadataProvider(), a, b, matches -> new SoutVisitor<>());
+        differ.diff(new JavaParserNodeMetadataProvider(), a, b, matches -> new SoutVisitor<>()).join();
     }
 }
