@@ -1,1 +1,4 @@
 rootProject.name = "die"
+
+include("api")
+include("network")

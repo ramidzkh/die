@@ -1,0 +1,22 @@
+plugins {
+    id("application")
+    id("com.github.johnrengelman.shadow") version "7.1.2"
+}
+
+dependencies {
+    api(project(":api"))
+
+    implementation("io.javalin:javalin:4.6.4")
+    implementation("com.google.guava:guava:31.1-jre")
+
+    runtimeOnly("org.slf4j:slf4j-simple:1.7.31")
+    runtimeOnly("org.slf4j:slf4j-api:1.6.1")
+    runtimeOnly("org.slf4j:slf4j-simple:1.6.1")
+
+    def test = project(":api").sourceSets.test
+    testImplementation(test.output + test.compileClasspath)
+}
+
+application {
+    mainClass.set("me.ramidzkh.die.network.DieServer")
+}

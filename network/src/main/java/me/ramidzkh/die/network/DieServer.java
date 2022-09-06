@@ -17,7 +17,8 @@ public class DieServer {
     }
 
     private record Data(Set<Integer> world, ArrayListMultimap<Integer, Integer> children,
-            Map<Integer, TL> typesAndLabels, IndexMap<String> stringPool) implements NodeMetadataProvider<Integer> {
+            Map<Integer, TL> typesAndLabels,
+            IndexMap<String> stringPool) implements NodeMetadataProvider<Integer> {
 
         @Override
         public List<Integer> getChildren(Integer node) {
@@ -35,9 +36,9 @@ public class DieServer {
         }
     }
 
-    private static CompletableFuture<byte[]> process(Differ differ, InputStream stream)
+    private static CompletableFuture<byte[]> process(Differ differ, byte[] stream)
             throws IOException {
-        var input = new DataInputStream(stream);
+        var input = new DataInputStream(new ByteArrayInputStream(stream));
         var data = new Data(new HashSet<>(), ArrayListMultimap.create(), new HashMap<>(), new IndexMap<>());
 
         var original = input.readInt();
@@ -165,7 +166,20 @@ public class DieServer {
             }
         }
 
-        app.post("/", ctx -> ctx.future(process(differ, ctx.bodyAsInputStream()).thenApply(ByteArrayInputStream::new)));
+        app.post("/", ctx -> {
+            String source = ctx.header("source");
+            try {
+                ctx.future(process(differ, ctx.bodyAsBytes())
+                        .thenApply($ -> {
+                            System.out.println("done: " + source);
+                            return $;
+                        })
+                        .thenApply(ByteArrayInputStream::new));
+            } catch (Throwable e) {
+                new Throwable("error: " + source, e).printStackTrace();
+                ctx.status(500);
+            }
+        });
     }
 
     public static void main(String[] args) {
